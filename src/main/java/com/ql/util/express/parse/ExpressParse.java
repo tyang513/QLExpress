@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.ql.util.express.exception.QLCompileException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -19,11 +20,26 @@ public class ExpressParse {
 	private static final Log log = LogFactory.getLog(ExpressParse.class);
 	NodeTypeManager nodeTypeManager;
 	IExpressResourceLoader expressResourceLoader;
+    
+    /**
+     * 是否忽略charset类型的数据，而识别为string，比如'a' -> "a"
+     * 在计算比如 '1'+'2'=='12'
+     */
+	private boolean ignoreConstChar = false;
 	/**
 	 * 是否需要高精度计算
 	 */
 	private boolean isPrecise = false;
-	public ExpressParse(NodeTypeManager aNodeTypeManager,IExpressResourceLoader aLoader,boolean aIsPrecise){
+    
+    public boolean isIgnoreConstChar() {
+        return ignoreConstChar;
+    }
+    
+    public void setIgnoreConstChar(boolean ignoreConstChar) {
+        this.ignoreConstChar = ignoreConstChar;
+    }
+    
+    public ExpressParse(NodeTypeManager aNodeTypeManager, IExpressResourceLoader aLoader, boolean aIsPrecise){
 		this.nodeTypeManager = aNodeTypeManager;
 		this.expressResourceLoader = aLoader;
 		this.isPrecise = aIsPrecise;
@@ -57,12 +73,16 @@ public class ExpressParse {
 	    }
 	    return result.toArray(new Word[0]);
 	}
-	/**
-	 * 进行单词类型分析
-	 * @param words
-	 * @return
-	 * @throws Exception
-	 */
+    
+    /**
+     * 进行单词类型分析
+     * @param aRootExpressPackage
+     * @param wordObjects
+     * @param selfClassDefine
+     * @param dealJavaClass
+     * @return
+     * @throws Exception
+     */
 	public List<ExpressNode> transferWord2ExpressNode(ExpressPackage aRootExpressPackage,Word[] wordObjects,Map<String,String> selfClassDefine,boolean dealJavaClass) throws Exception{
 		List<ExpressNode> result = new ArrayList<ExpressNode>();
 		String tempWord;
@@ -160,7 +180,7 @@ public class ExpressParse {
 			  point = point + 1;
 		  }else if(firstChar =='"'){
 			  if(lastChar !='"' || tempWord.length() <2){
-				  throw new Exception("没有关闭的字符串：" + tempWord);
+				  throw new QLCompileException("没有关闭的字符串：" + tempWord);
 			  }
 			  tempWord = tempWord.substring(1,tempWord.length() -1);
 			  tempType =nodeTypeManager.findNodeType("CONST_STRING");
@@ -169,12 +189,12 @@ public class ExpressParse {
 			  point = point + 1;
 		  }else if(firstChar =='\''){
 			  if(lastChar !='\'' || tempWord.length() <2){
-				  throw new Exception("没有关闭的字符：" + tempWord);
+				  throw new QLCompileException("没有关闭的字符：" + tempWord);
 			  }
 			  tempWord = tempWord.substring(1,tempWord.length() -1);
 			  
 			  treeNodeType = nodeTypeManager.findNodeType("CONST");
-			  if(tempWord.length() == 1){ //转换为字符串
+			  if(tempWord.length() == 1 && !ignoreConstChar){ //转换为字符串
 				  tempType =nodeTypeManager.findNodeType("CONST_CHAR");
 				  objectValue = tempWord.charAt(0);
 			  }else{
@@ -296,7 +316,6 @@ public class ExpressParse {
     /**
      * 提取自定义的Class
      * @param words
-     * @return
      */
 	public static void fetchSelfDefineClass(Word[] words,Map<String,String> selfDefineClass){
 		for(int i=0;i<words.length -1;i++){
@@ -331,24 +350,55 @@ public class ExpressParse {
         }
 		return words;
 	}
-	public ExpressNode parse(ExpressPackage rootExpressPackage,Word[] words ,String express,boolean isTrace,Map<String,String> selfDefineClass) throws Exception{
+    
+    public ExpressNode parse(ExpressPackage rootExpressPackage,Word[] words ,String express,boolean isTrace,Map<String,String> selfDefineClass) throws Exception{
+	    return parse(rootExpressPackage,words,express,isTrace,selfDefineClass,false);
+    }
+	public ExpressNode parse(ExpressPackage rootExpressPackage,Word[] words ,String express,boolean isTrace,Map<String,String> selfDefineClass,boolean mockRemoteJavaClass) throws Exception{
 
 		
     	List<ExpressNode> tempList = this.transferWord2ExpressNode(rootExpressPackage,words,selfDefineClass,true);
-    	if(isTrace == true && log.isDebugEnabled()){
-    		log.debug("单词分析结果:" + printInfo(tempList,","));
-    	}
-    	
+        if(isTrace == true && log.isDebugEnabled()){
+            log.debug("单词分析结果:" + printInfo(tempList,","));
+        }
+        //比如用在远程配置脚本，本地jvm并不包含这个java类，可以
+        if(mockRemoteJavaClass){
+            List<ExpressNode> tempList2 = new ArrayList<ExpressNode>();
+            for(int i=0;i<tempList.size();i++){
+                ExpressNode node = tempList.get(i);
+                if(node.getValue().equals("new") && node.getNodeType().getKind() == NodeTypeKind.KEYWORD && i+1<tempList.size() && !"CONST_CLASS".equals(tempList.get(i+1).getNodeType().getName())){
+                    tempList2.add(node);
+                    //取出 ( 前面的类路径作为configClass名称
+                    int end = i+1;
+                    String configClass = tempList.get(end).getValue();
+                    end++;
+                    while (!tempList.get(end).getValue().equals("(")) {
+                        configClass = configClass+tempList.get(end).getValue();
+                        end++;
+                    }
+                    NodeType nodeType = nodeTypeManager.findNodeType("VClass");
+                    ExpressNode vClassNode = new ExpressNode(nodeType,configClass);
+                    tempList2.add(vClassNode);
+                    i = end-1;//因为循环之后，i++，所以i=end-1
+                }else {
+                    tempList2.add(node);
+                }
+            }
+            tempList = tempList2;
+            if(isTrace == true && log.isDebugEnabled()){
+                log.debug("修正后单词分析结果:" + printInfo(tempList,","));
+            }
+        }
 
 		QLMatchResult result = QLPattern.findMatchStatement(this.nodeTypeManager, this.nodeTypeManager
 						.findNodeType("PROGRAM").getPatternNode(), tempList,0);
 		if(result == null){
-			throw new Exception("语法匹配失败");
+			throw new QLCompileException("语法匹配失败");
 		}
 		if(result.getMatchLastIndex() < tempList.size()){
 			int maxPoint = result.getMatchLastIndex();
 			ExpressNode tempNode = tempList.get(maxPoint);
-			throw new Exception("还有单词没有完成语法匹配：" + result.getMatchLastIndex() +"["+ tempNode.getValue() + ":line=" + tempNode.getLine() + ",col=" + tempNode.getCol() +"] 之后的单词 \n" + express);
+			throw new QLCompileException("还有单词没有完成语法匹配：" + result.getMatchLastIndex() +"["+ tempNode.getValue() + ":line=" + tempNode.getLine() + ",col=" + tempNode.getCol() +"] 之后的单词 \n" + express);
 		}
 		result.getMatchs().get(0).buildExpressNodeTree();
 		ExpressNode root =(ExpressNode)result.getMatchs().get(0).getRef();

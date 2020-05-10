@@ -105,3 +105,22 @@ public Object execute(InstructionSet[] instructionSets,IExpressContext<String,Ob
 
 ## 18、3.1.8版本[2018-1-30]
 (1)增加扩展功能:ExpressRunner#setIgnoreConstChar(Boolean),设置可以忽略单字符操作，即 'a'自动变成"a"。
+
+## 3.2.1版本[2018-2-23]
+(1)增加扩展功能:ExpressRunner#setIgnoreConstChar(Boolean),设置可以忽略单字符操作，即 'a'自动变成"a"。
+
+(2)增加接口来支持绑定自定义classloader的class的method:ExpressRunner#addFunctionOfClassMethod(String name, Class<?> aClass,...)。
+
+## 3.2.2版本[2019-1-22]
+(1)android环境的重大优化：减少编译的内存消耗，堆栈溢出问题
+
+(2)空指针的保护策略：com.ql.util.express.config.QLExpressRunStrategy.setAvoidNullPointer(true)
+
+## 3.2.3版本[2019-6-18]
+(1)增加超时方法:TimeOutExceptionTest
+
+(2)安全审核方法:InvokeSecurityRiskMethodsTest
+
+(3)区分异常类型：ThrowExceptionTest
+## 3.2.4版本[2019-12-6]
+(1)增加null的数字比较方案"1>null"":NullCompareTest

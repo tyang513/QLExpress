@@ -1,20 +1,17 @@
 package com.ql.util.express;
 
-import java.lang.reflect.Array;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
+import com.ql.util.express.config.QLExpressRunStrategy;
+import com.ql.util.express.exception.QLException;
+import org.apache.commons.beanutils.PropertyUtils;
+
+import java.lang.reflect.*;
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.apache.commons.beanutils.PropertyUtils;
 
 
 /**
@@ -518,7 +515,7 @@ public class ExpressUtil {
 		while (m.find()) {
 			int index = Integer.parseInt(m.group().substring(1)) - 1;
 			if (index < 0 || index >= parameters.length) {
-				throw new Exception("设置的参数位置$" + (index + 1) + "超过了范围 "
+				throw new QLException("设置的参数位置$" + (index + 1) + "超过了范围 "
 						+ parameters.length);
 			}
 			m.appendReplacement(sb, " " + parameters[index].toString() + " ");
@@ -529,6 +526,9 @@ public class ExpressUtil {
 
 	public static Object getProperty(Object bean, Object name) {
 		try {
+		    if(bean==null && QLExpressRunStrategy.isAvoidNullPointer()){
+		        return null;
+            }
 			if(bean.getClass().isArray() && name.equals("length")){
 			   return Array.getLength(bean);
 			}else if (bean instanceof Class) {
@@ -601,7 +601,6 @@ public class ExpressUtil {
  * @param type
  * @param isForce 是否强制转换
  * @return
- * @throws Exception
  */
 	public static Object castObject(Object value, Class<?> type,boolean isForce){
 		if (value == null)

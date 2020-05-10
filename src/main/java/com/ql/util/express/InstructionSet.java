@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.ql.util.express.config.QLExpressTimer;
+import com.ql.util.express.exception.QLException;
 import com.ql.util.express.instruction.detail.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -38,7 +40,7 @@ public class InstructionSet implements Serializable{
 	public static String TYPE_FUNCTION ="function";
 	public static String TYPE_MARCO ="marco";
 	
-	public static boolean printInstructionError = true;
+	public static boolean printInstructionError = false;
 	
 	
 	private String type ="main";
@@ -82,6 +84,19 @@ public class InstructionSet implements Serializable{
 	  return result.keySet().toArray(new String[0]);
 
   }
+    
+    public String[] getVirClasses() throws Exception {
+        Map<String,String> result = new TreeMap<String,String>();
+        for (int i = 0; i < instructionList.length; i++) {
+            Instruction instruction = instructionList[i];
+            if (instruction instanceof InstructionNewVirClass) {
+                String functionName = ((InstructionNewVirClass)instruction).getClassName();
+                result.put(functionName, null);
+            }
+        }
+        return result.keySet().toArray(new String[0]);
+        
+    }
   public String[] getOutAttrNames() throws Exception{
 	  Map<String,String> result = new TreeMap<String,String>();
 	  for(Instruction instruction:instructionList){
@@ -187,7 +202,7 @@ public class InstructionSet implements Serializable{
 			}
 		}
 		if (environmen.getDataStackSize() > 1) {
-			throw new Exception("在表达式执行完毕后，堆栈中还存在多个数据");
+			throw new QLException("在表达式执行完毕后，堆栈中还存在多个数据");
 		}
 		CallResult result = OperateDataCacheManager.fetchCallResult(environmen.getReturnValue(), environmen.isExit());
 		return result;
@@ -196,9 +211,7 @@ public class InstructionSet implements Serializable{
 			Instruction instruction =null;
 		try {
 			while (environmen.programPoint < this.instructionList.length) {
-//				if (environmen.isExit() == true) {
-//					return;
-//				}
+				QLExpressTimer.assertTimeOut();
 				instruction = this.instructionList[environmen.programPoint];
 				instruction.setLog(aLog);// 设置log
 				instruction.execute(environmen, errorList);

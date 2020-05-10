@@ -1,9 +1,18 @@
 # QLExpress基本语法
 
+[![Join the chat at https://gitter.im/QLExpress/Lobby](https://badges.gitter.im/QLExpress/Lobby.svg)](https://gitter.im/QLExpress/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 # 一、背景介绍
 
 由阿里的电商业务规则、表达式（布尔组合）、特殊数学公式计算（高精度）、语法分析、脚本二次定制等强需求而设计的一门动态脚本引擎解析工具。
 在阿里集团有很强的影响力，同时为了自身不断优化、发扬开源贡献精神，于2012年开源。
+
+QLExpress脚本引擎被广泛应用在阿里的电商业务场景，具有以下的一些特性:
+- 1、线程安全，引擎运算过程中的产生的临时变量都是threadlocal类型。
+- 2、高效执行，比较耗时的脚本编译过程可以缓存在本地机器，运行时的临时变量创建采用了缓冲池的技术，和groovy性能相当。
+- 3、弱类型脚本语言，和groovy，javascript语法类似，虽然比强类型脚本语言要慢一些，但是使业务的灵活度大大增强。
+- 4、安全控制,可以通过设置相关运行参数，预防死循环、高危系统api调用等情况。
+- 5、代码精简，依赖最小，250k的jar包适合所有java的运行环境，在android系统的低端pos机也得到广泛运用。
 
 # 二、依赖和调用说明
 
@@ -43,9 +52,57 @@ return sum;
 //逻辑三元操作
 a=1;
 b=2;
-max = a>b?a:b;
+maxnum = a>b?a:b;
 
 ``` 
+
+### 和java语法相比，要避免的一些ql写法错误
+- 不支持try{}catch{}
+- 不支持java8的lambda表达式
+- 不支持for循环集合操作for (GRCRouteLineResultDTO item : list)
+- 弱类型语言，请不要定义类型声明,更不要用Templete（Map<String,List>之类的）
+- array的声明不一样
+- min,max,round,print,println,like,in 都是系统默认函数的关键字，请不要作为变量名
+
+```
+//java语法：使用泛型来提醒开发者检查类型
+keys = new ArrayList<String>();
+deviceName2Value = new HashMap<String,String>(7);
+String[] deviceNames = {"ng","si","umid","ut","mac","imsi","imei"};
+int[] mins = {5,30};
+
+//ql写法：
+keys = new ArrayList();
+deviceName2Value = new HashMap();
+deviceNames = ["ng","si","umid","ut","mac","imsi","imei"];
+mins = [5,30];
+
+
+//java语法：对象类型声明
+FocFulfillDecisionReqDTO reqDTO = param.getReqDTO();
+//ql写法：
+reqDTO = param.getReqDTO();
+
+//java语法：数组遍历
+for(GRCRouteLineResultDTO item : list) {
+}
+//ql写法：
+for(i=0;i<list.size();i++){
+item = list.get(i);
+}
+
+//java语法：map遍历
+for(String key : map.keySet()) {
+  System.out.println(map.get(key));
+}
+//ql写法：
+  keySet = map.keySet();
+  objArr = keySet.toArray();
+  for (i=0;i<objArr.length;i++) {
+  key = objArr[i];
+   System.out.println(map.get(key));
+  }
+```
 
 ### java的对象操作
 
@@ -85,9 +142,9 @@ runner.addOperatorWithAlias("如果", "if",null);
 runner.addOperatorWithAlias("则", "then",null);
 runner.addOperatorWithAlias("否则", "else",null);
 
-exp = "如果  (如果 1==2 则 false 否则 true) 则 {2+2;} 否则 {20 + 20;}";
+exp = "如果  (语文+数学+英语>270) 则 {return 1;} 否则 {return 0;}";
 DefaultContext<String, Object> context = new DefaultContext<String, Object>();
-runner.execute(exp,nil,null,false,false,null);
+runner.execute(exp,context,null,false,false,null);
 ```
 
 ### 如何自定义Operator
@@ -169,7 +226,7 @@ runner.addFunctionOfServiceMethod("打印", System.out, "println",new String[] {
 runner.addFunctionOfServiceMethod("contains", new BeanExample(), "anyContains",
             new Class[] { String.class, String.class }, null);
 
-String exp = “取绝对值(-100);转换为大写(\"hello world\");打印(\"你好吗？\")；contains("helloworld",\"aeiou\")”;
+String exp = “取绝对值(-100);转换为大写(\"hello world\");打印(\"你好吗？\");contains("helloworld",\"aeiou\")”;
 runner.execute(exp, context, null, false, false);
 
 ```
@@ -459,9 +516,38 @@ InstructionSet instructionSet = expressRunner.parseInstructionSet(expressString)
 	void clearExpressCache();
 ```
 
-### （6）增强上下文参数Context相关的api
+### （7）安全风险控制
+#### 7.1 防止死循环
+```java
+    try {
+    	express = "sum=0;for(i=0;i<1000000000;i++){sum=sum+i;}return sum;";
+	//可通过timeoutMillis参数设置脚本的运行超时时间:1000ms
+	Object r = runner.execute(express, context, null, true, false, 1000);
+	System.out.println(r);
+	throw new Exception("没有捕获到超时异常");
+    } catch (QLTimeOutException e) {
+	System.out.println(e);
+    }
+```
+#### 7.1 防止调用不安全的系统api
+```java
+    ExpressRunner runner = new ExpressRunner();
+    QLExpressRunStrategy.setForbiddenInvokeSecurityRiskMethods(true);
+    
+    DefaultContext<String, Object> context = new DefaultContext<String, Object>();
+    try {
+    	express = "System.exit(1);";
+	Object r = runner.execute(express, context, null, true, false);
+	System.out.println(r);
+	throw new Exception("没有捕获到不安全的方法");
+    } catch (QLException e) {
+	System.out.println(e);
+    }
+```
 
-#### 6.1 与spring框架的无缝集成
+### （8）增强上下文参数Context相关的api
+
+#### 8.1 与spring框架的无缝集成
 上下文参数 IExpressContext context 非常有用，它允许put任何变量，然后在脚本中识别出来。
 
 在实际中我们很希望能够无缝的集成到spring框架中，可以仿照下面的例子使用一个子类。
@@ -508,7 +594,7 @@ public class QLExpressContext extends HashMap<String, Object> implements
 完整的demo参照 [SpringDemoTest.java](https://github.com/alibaba/QLExpress/blob/master/src/test/java/com/ql/util/express/test/spring/SpringDemoTest.java)
 
 
-#### 6.2 自定义函数操作符获取原始的context控制上下文
+#### 8.2 自定义函数操作符获取原始的context控制上下文
 
 自定义的Operator需要直接继承OperatorBase，获取到parent即可，可以用于在运行一组脚本的时候，直接编辑上下文信息，业务逻辑处理上也非常有用。
 
@@ -550,3 +636,10 @@ public class ContextMessagePutTest {
 
 附录：
 [版本更新列表](VERSIONS.md)
+
+## links for us
+-  Gitter channel - Online chat room with QLExpress developers. [Gitter channel ](https://gitter.im/QLExpress/Lobby)
+-  email:tianqiao@alibaba-inc.com,baoxingjie@126.com
+-  wechart:371754252
+-  QLExpress blogs: https://yq.aliyun.com/album/130
+
